@@ -12,11 +12,11 @@ export class ChatController {
 
   @Post('ask')
   async ask(@Req() req: any, @Body() dto: AskDto) {
-    // 1. On extrait l'ID de l'utilisateur injecté par Passport dans la requête
-    const userId = req.user.id;
-
-    // 2. On transmet les infos au service
-    // Note : On utilise dto.modelId (qu'on a ajouté au DTO à l'étape précédente)
-    return this.chatService.getAiResponse(userId, dto.modelId, dto.content);
+    return this.chatService.getAiResponse(
+      req.user.id, 
+      dto.modelId, 
+      dto.content, 
+      dto.conversationId
+    );
   }
 }
