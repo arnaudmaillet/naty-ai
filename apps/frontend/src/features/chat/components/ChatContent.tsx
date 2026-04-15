@@ -17,7 +17,6 @@ export function ChatContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [convId, setConvId] = useState<string | undefined>();
 
-  // Charger la conversation au changement d'ID dans l'URL
   useEffect(() => {
     if (idFromUrl) {
       setIsLoading(true);
@@ -29,7 +28,6 @@ export function ChatContent() {
         .catch(err => console.error("Erreur de chargement:", err))
         .finally(() => setIsLoading(false));
     } else {
-      // Mode "Nouvelle Discussion"
       setMessages([]);
       setConvId(undefined);
     }
@@ -40,15 +38,30 @@ export function ChatContent() {
     
     const content = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content }]);
+    
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content,
+      conversationId: convId || 'new', 
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
       const data = await chatRequest(content, 'gemini-3-flash-preview', convId);
+      const assistantMessage: Message = {
+        id: data.messageId || crypto.randomUUID(), 
+        role: 'assistant',
+        content: data.response,
+        conversationId: data.conversationId || convId || 'new',
+        createdAt: new Date().toISOString(),
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
       
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-      
-      // Si c'est une nouvelle conversation, on met à jour l'URL sans recharger la page
       if (!convId && data.conversationId) {
         setConvId(data.conversationId);
         router.push(`/?id=${data.conversationId}`, { scroll: false });
