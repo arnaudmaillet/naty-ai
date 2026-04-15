@@ -7,7 +7,7 @@
     "db:reset": "prisma migrate reset --schema=apps/backend/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=apps/backend/prisma/schema.prisma",
     "db:generate": "prisma generate --schema=apps/backend/prisma/schema.prisma",
-    "postinstall": "prisma generate --schema=prisma/schema.prisma"
+    "postinstall": "prisma generate --schema=apps/backend/prisma/schema.prisma"
   },
   "private": true,
   "dependencies": {
