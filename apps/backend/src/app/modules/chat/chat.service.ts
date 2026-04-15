@@ -10,19 +10,27 @@ export class ChatService {
   constructor(
     private prisma: PrismaService,
     private encryptionService: EncryptionService,
-    private providerFactory: ProviderFactory
+    private providerFactory: ProviderFactory,
   ) {}
 
-  async getAiResponse(userId: string, modelId: string, content: string, conversationId?: string) {
+  async getAiResponse(
+    userId: string,
+    modelId: string,
+    content: string,
+    conversationId?: string,
+  ) {
     // 1. Trouver le modèle
-    const model = await this.prisma.aiModel.findUnique({ where: { id: modelId } });
+    const model = await this.prisma.aiModel.findUnique({
+      where: { id: modelId },
+    });
     if (!model) throw new BadRequestException('Modèle introuvable');
 
     // 2. Récupérer et déchiffrer la clé
     const keyRecord = await this.prisma.userApiKey.findUnique({
-      where: { userId_provider: { userId, provider: model.provider } }
+      where: { userId_provider: { userId, provider: model.provider } },
     });
-    if (!keyRecord) throw new BadRequestException(`Clé manquante pour ${model.provider}`);
+    if (!keyRecord)
+      throw new BadRequestException(`Clé manquante pour ${model.provider}`);
 
     const apiKey = this.encryptionService.decrypt(keyRecord.encryptedKey);
 
@@ -31,29 +39,30 @@ export class ChatService {
     let history: ChatMessage[] = [];
 
     if (conversationId) {
-        // On récupère la conversation et les 10 derniers messages pour le contexte
-        conversation = await this.prisma.conversation.findUnique({
+      // On récupère la conversation et les 10 derniers messages pour le contexte
+      conversation = await this.prisma.conversation.findUnique({
         where: { id: conversationId, userId }, // Sécurité : vérifie que c'est bien celle de l'user
         include: {
-            messages: {
+          messages: {
             orderBy: { createdAt: 'asc' },
             take: 20, // On limite pour ne pas exploser les tokens
-            }
-        }
-        });
+          },
+        },
+      });
 
-        if (!conversation) throw new BadRequestException('Conversation introuvable');
+      if (!conversation)
+        throw new BadRequestException('Conversation introuvable');
 
-        // On transforme les messages Prisma au format attendu par les stratégies (ChatMessage[])
-        history = conversation.messages.map(m => ({
+      // On transforme les messages Prisma au format attendu par les stratégies (ChatMessage[])
+      history = conversation.messages.map((m) => ({
         role: m.role as MessageRole,
-        content: m.content
-        }));
+        content: m.content,
+      }));
     } else {
-        // Nouvelle conversation
-        conversation = await this.prisma.conversation.create({
-        data: { userId, title: content.substring(0, 50) }
-        });
+      // Nouvelle conversation
+      conversation = await this.prisma.conversation.create({
+        data: { userId, title: content.substring(0, 50) },
+      });
     }
 
     // 4. Ajouter le message actuel à l'historique avant l'envoi
@@ -62,16 +71,48 @@ export class ChatService {
 
     // 5. Appeler l'IA avec TOUT le contexte
     const strategy = this.providerFactory.getProvider(model.provider);
-    const aiResponse = await strategy.generateResponse(fullContext, model.id, apiKey);
+    const aiResponse = await strategy.generateResponse(
+      fullContext,
+      model.id,
+      apiKey,
+    );
 
     // 6. Sauvegarder les deux nouveaux messages (User et AI) en BDD
     await this.prisma.message.createMany({
-        data: [
-            { content, role: MessageRole.USER, conversationId: conversation.id },
-            { content: aiResponse, role: MessageRole.ASSISTANT, conversationId: conversation.id, modelId: model.id }
-        ]
+      data: [
+        { content, role: MessageRole.USER, conversationId: conversation.id },
+        {
+          content: aiResponse,
+          role: MessageRole.ASSISTANT,
+          conversationId: conversation.id,
+          modelId: model.id,
+        },
+      ],
     });
 
     return { response: aiResponse, conversationId: conversation.id };
-    }
+  }
+
+  async getUserConversations(userId: string) {
+    return this.prisma.conversation.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, title: true, updatedAt: true },
+    });
+  }
+
+  async getConversationWithMessages(userId: string, conversationId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId, userId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!conversation)
+      throw new BadRequestException('Conversation introuvable');
+    return conversation;
+  }
 }
