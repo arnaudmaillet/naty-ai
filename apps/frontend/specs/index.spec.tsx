@@ -15,7 +15,7 @@ jest.mock('next/navigation', () => ({
 // Mock de React Markdown
 jest.mock('react-markdown', () => ({
   __esModule: true,
-  default: ({ children }: any) => <div>{children}</div>,
+  default: ({ children }: { children: string }) => <div>{children}</div>,
 }));
 
 // Mock de Remark GFM
