@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getConversations } from '../../../services/api';
+import { Message } from '@naty-ai/shared-types';
 
 export function Sidebar() {
-  const [conversations, setConversations] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<Message[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentId = searchParams.get('id');

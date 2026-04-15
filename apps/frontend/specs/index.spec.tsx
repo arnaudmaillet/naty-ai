@@ -8,3 +8,13 @@ describe('Page', () => {
     expect(baseElement).toBeTruthy();
   });
 });
+
+jest.mock('react-markdown', () => ({
+  __esModule: true,
+  default: ({ children }: { children: string }) => <div>{children}</div>,
+}));
+
+jest.mock('remark-gfm', () => ({
+  __esModule: true,
+  default: () => {},
+}));

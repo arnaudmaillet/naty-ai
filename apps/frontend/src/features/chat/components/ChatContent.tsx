@@ -5,13 +5,14 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { chatRequest, getFullConversation } from '../../../services/api';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
+import { Message } from '@naty-ai/shared-types';
 
 export function ChatContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const idFromUrl = searchParams.get('id');
 
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [convId, setConvId] = useState<string | undefined>();
