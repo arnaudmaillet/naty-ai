@@ -15,15 +15,16 @@ datasource db {
 // --- BLOC 1 : IDENTITÉ & ACCÈS ---
 
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  password      String
-  fullName      String
-  createdAt     DateTime       @default(now())
-  
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  createdAt DateTime @default(now())
+
   // Relations
-  apiKeys       UserApiKey[]
-  conversations Conversation[]
+  apiKeys            UserApiKey[]
+  conversations      Conversation[]
+  messageAnnotations MessageAnnotation[]
 }
 
 model UserApiKey {
@@ -57,7 +58,7 @@ model AiModel {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  messages      Message[]
+  messages Message[]
 }
 
 // --- BLOC 3 : MESSAGERIE & CONTENU ---
@@ -73,13 +74,39 @@ model Conversation {
 }
 
 model Message {
-  id             String       @id @default(uuid())
+  id             String              @id @default(uuid())
   content        String
   role           String
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   modelId        String?
-  aiModel        AiModel?     @relation(fields: [modelId], references: [id])
-  
-  createdAt      DateTime     @default(now())
+  aiModel        AiModel?            @relation(fields: [modelId], references: [id])
+  annotations    MessageAnnotation[]
+
+  createdAt DateTime @default(now())
+}
+
+model ForkMessage {
+  id           String            @id @default(uuid())
+  annotationId String
+  annotation   MessageAnnotation @relation(fields: [annotationId], references: [id], onDelete: Cascade)
+  role      String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
+model MessageAnnotation {
+  id              String        @id @default(uuid())
+  parentMessageId String
+  message         Message       @relation(fields: [parentMessageId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  selectedText    String        @db.Text
+  startIndex      Int
+  endIndex        Int
+  messages        ForkMessage[]
+
+  createdAt DateTime @default(now())
+
+  @@index([parentMessageId, userId])
 }
