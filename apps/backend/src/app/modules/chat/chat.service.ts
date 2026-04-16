@@ -2,8 +2,8 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProviderFactory } from './providers/provider.factory';
 import { EncryptionService } from '../encryption/encryption.service';
-import { MessageRole } from './types/providers';
 import { ChatMessage } from './interfaces/ai-strategy';
+import { MessageRole } from '@naty-ai/shared-types';
 
 @Injectable()
 export class ChatService {
@@ -34,34 +34,27 @@ export class ChatService {
 
     const apiKey = this.encryptionService.decrypt(keyRecord.encryptedKey);
 
-    // 3. Obtenir la stratégie
+    // 3. Obtenir la conversation et l'historique
     let conversation;
     let history: ChatMessage[] = [];
+    let isNewConversation = false;
 
     if (conversationId) {
-      // On récupère la conversation et les 10 derniers messages pour le contexte
       conversation = await this.prisma.conversation.findUnique({
-        where: { id: conversationId, userId }, // Sécurité : vérifie que c'est bien celle de l'user
-        include: {
-          messages: {
-            orderBy: { createdAt: 'asc' },
-            take: 20, // On limite pour ne pas exploser les tokens
-          },
-        },
+        where: { id: conversationId, userId },
+        include: { messages: { orderBy: { createdAt: 'asc' }, take: 20 } },
       });
-
       if (!conversation)
         throw new BadRequestException('Conversation introuvable');
 
-      // On transforme les messages Prisma au format attendu par les stratégies (ChatMessage[])
       history = conversation.messages.map((m) => ({
         role: m.role as MessageRole,
         content: m.content,
       }));
     } else {
-      // Nouvelle conversation
+      isNewConversation = true;
       conversation = await this.prisma.conversation.create({
-        data: { userId, title: content.substring(0, 50) },
+        data: { userId, title: 'Nouvelle discussion' },
       });
     }
 
@@ -90,7 +83,24 @@ export class ChatService {
       ],
     });
 
-    return { response: aiResponse, conversationId: conversation.id };
+    let finalTitle = conversation.title; // Par défaut "Nouvelle discussion"
+
+    if (isNewConversation) {
+      finalTitle = await this.generateConversationTitle(
+        conversation.id,
+        content,
+        model.id,
+        apiKey,
+        model.provider,
+      );
+    }
+
+    // 8. On renvoie le titre au front pour qu'il puisse mettre à jour la Sidebar immédiatement
+    return {
+      response: aiResponse,
+      conversationId: conversation.id,
+      title: finalTitle,
+    };
   }
 
   async getUserConversations(userId: string) {
@@ -114,5 +124,45 @@ export class ChatService {
     if (!conversation)
       throw new BadRequestException('Conversation introuvable');
     return conversation;
+  }
+
+  async generateConversationTitle(
+    conversationId: string,
+    firstMessage: string,
+    modelId: string,
+    apiKey: string,
+    provider: any,
+  ): Promise<string> {
+    const prompt = `Génère un titre très court (max 4 mots) pour : "${firstMessage}". Pas de ponctuation, pas de guillemets.`;
+    try {
+      const strategy = this.providerFactory.getProvider(provider);
+      const titleResponse = await strategy.generateResponse(
+        [{ role: MessageRole.USER, content: prompt }],
+        modelId,
+        apiKey,
+      );
+      const cleanTitle = titleResponse.replace(/"/g, '').trim();
+
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { title: cleanTitle },
+      });
+
+      return cleanTitle;
+    } catch (error) {
+      return 'Nouvelle discussion'; // Fallback
+    }
+  }
+
+  async getModels() {
+    return this.prisma.aiModel.findMany({
+      where: {
+        isEnabled: true,
+        isPublic: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
   }
 }

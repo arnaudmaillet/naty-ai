@@ -1,6 +1,14 @@
 // apps/backend/src/app/modules/chat/chat.controller.ts
 
-import { Controller, Post, Get, Body, UseGuards, Req, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Req,
+  Param,
+} from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { AskDto } from './dto/ask.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,5 +36,10 @@ export class ChatController {
   @Get('conversations/:id')
   async getConversationMessages(@Req() req: any, @Param('id') id: string) {
     return this.chatService.getConversationWithMessages(req.user.id, id);
+  }
+
+  @Get('models')
+  async listModels() {
+    return this.chatService.getModels();
   }
 }
