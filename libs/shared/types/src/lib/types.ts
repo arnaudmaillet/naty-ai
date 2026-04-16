@@ -19,3 +19,26 @@ export interface Conversation {
   createdAt: Date | string;
   messages?: Message[];
 }
+
+export enum AiProvider {
+  GEMINI = 'GEMINI',
+  OPENAI = 'OPENAI',
+  ANTHROPIC = 'ANTHROPIC',
+}
+
+export interface AiModel {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  contextWindow: number;
+  isEnabled: boolean;
+}
+
+/**
+ * Rôles dans une conversation (Standardisé pour la plupart des APIs)
+ */
+export enum MessageRole {
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  SYSTEM = 'system',
+}

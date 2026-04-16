@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AiStrategy, ChatMessage } from './../interfaces/ai-strategy';
-import { MessageRole } from '../types/providers';
+import {  MessageRole } from '@naty-ai/shared-types';
 
 @Injectable()
 export class GeminiStrategy implements AiStrategy {

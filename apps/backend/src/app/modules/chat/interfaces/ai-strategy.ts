@@ -1,4 +1,4 @@
-import { MessageRole } from '../types/providers';
+import {  MessageRole } from '@naty-ai/shared-types';
 
 export interface ChatMessage {
   role: MessageRole;

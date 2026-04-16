@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getConversations } from '../../../services/api';
 import { Conversation } from '@naty-ai/shared-types';
@@ -10,11 +10,21 @@ export function Sidebar() {
   const searchParams = useSearchParams();
   const currentId = searchParams.get('id');
 
-  useEffect(() => {
+  const fetchConversations = useCallback(() => {
     getConversations()
       .then(data => setConversations(data))
-      .catch(err => console.error(err));
+      .catch(err => console.error("Erreur chargement conversations:", err));
   }, []);
+
+  useEffect(() => {
+    fetchConversations();
+
+    window.addEventListener('refresh-conversations', fetchConversations);
+
+    return () => {
+      window.removeEventListener('refresh-conversations', fetchConversations);
+    };
+  }, [fetchConversations]);
 
   const navigateTo = (id?: string) => {
     if (id) {
@@ -31,8 +41,8 @@ export function Sidebar() {
       </div>
 
       <div className="p-3">
-        <button 
-          onClick={() => navigateTo()} 
+        <button
+          onClick={() => navigateTo()}
           className="w-full text-left px-3 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 transition-all text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20"
         >
           <span>+</span> Nouvelle discussion
@@ -40,21 +50,24 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-        {conversations.map((conv) => (
-          <button
-            key={conv.id}
-            onClick={() => navigateTo(conv.id)}
-            className={`w-full text-left px-3 py-2.5 rounded-lg transition-all text-sm truncate ${
-              currentId === conv.id 
-                ? 'bg-gray-800 text-white' 
-                : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-            }`}
-          >
-            {conv.title || 'Discussion sans titre'}
-          </button>
-        ))}
+        {conversations.length === 0 ? (
+          <div className="px-3 py-2 text-xs text-gray-500 italic">Aucune discussion</div>
+        ) : (
+          conversations.map((conv) => (
+            <button
+              key={conv.id}
+              onClick={() => navigateTo(conv.id)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg transition-all text-sm truncate ${currentId === conv.id
+                  ? 'bg-gray-800 text-white ring-1 ring-gray-700'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                }`}
+            >
+              {conv.title || 'Discussion sans titre'}
+            </button>
+          ))
+        )}
       </nav>
-      
+
       <div className="p-4 border-t border-gray-800 flex flex-col gap-1">
         <div className="text-xs text-gray-400">Connecté en tant que</div>
         <div className="text-sm font-medium truncate">Arnaud</div>
