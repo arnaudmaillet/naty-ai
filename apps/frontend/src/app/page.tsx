@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
-import { ChatContent } from '../features/chat/components/ChatContent';
+import { LayoutContent } from '../features/chat/components/LayoutContent';
 
 export default function ChatPage() {
   return (
@@ -10,7 +10,7 @@ export default function ChatPage() {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     }>
-      <ChatContent />
+      <LayoutContent />
     </Suspense>
   );
 }

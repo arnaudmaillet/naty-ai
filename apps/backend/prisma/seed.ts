@@ -5,8 +5,8 @@ const prisma = new PrismaClient();
 async function main() {
   const models = [
     {
-      id: 'gemini-1.5-flash',
-      name: 'Gemini 1.5 Flash',
+      id: 'gemini-3-flash-preview',
+      name: 'Gemini 3 Flash',
       provider: AiProvider.GEMINI,
       contextWindow: 1000000,
     },

@@ -4,7 +4,9 @@
   "license": "MIT",
   "scripts": {
     "db:migrate": "prisma migrate dev --schema=apps/backend/prisma/schema.prisma",
-    "db:reset": "prisma migrate reset --schema=apps/backend/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=apps/backend/prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --schema=apps/backend/prisma/schema.prisma --force && npm run db:push && npm run db:seed",
+    "db:seed": "ts-node -O '{\"module\":\"commonjs\"}' apps/backend/prisma/seed.ts",
     "db:studio": "prisma studio --schema=apps/backend/prisma/schema.prisma",
     "db:generate": "prisma generate --schema=apps/backend/prisma/schema.prisma",
     "postinstall": "prisma generate --schema=apps/backend/prisma/schema.prisma"

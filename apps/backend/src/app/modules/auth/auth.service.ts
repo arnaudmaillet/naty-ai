@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
@@ -9,8 +13,8 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService
-) {}
+    private jwtService: JwtService,
+  ) {}
 
   async register(dto: RegisterDto) {
     const userExists = await this.prisma.user.findUnique({
@@ -52,7 +56,7 @@ export class AuthService {
     }
 
     const payload = { sub: user.id, email: user.email };
-    
+
     return {
       accessToken: await this.jwtService.signAsync(payload),
       user: {

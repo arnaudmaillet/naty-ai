@@ -11,5 +11,6 @@ import { ProviderFactory } from './providers/provider.factory';
     GeminiStrategy,
     ProviderFactory
 ],
+exports: [ProviderFactory]
 })
 export class ChatModule {}
