@@ -1,5 +1,4 @@
-import {  MessageRole } from '@naty-ai/shared-types';
-
+import { MessageRole } from "@prisma/client";
 export interface ChatMessage {
   role: MessageRole;
   content: string;

@@ -61,6 +61,12 @@
         }
       }
     },
+    "prisma-seed": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "ts-node apps/backend/prisma/seed.ts"
+      }
+    },
     "test": {
       "options": {
         "passWithNoTests": true

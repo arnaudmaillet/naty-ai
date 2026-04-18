@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProviderFactory } from './providers/provider.factory';
 import { EncryptionService } from '../encryption/encryption.service';
 import { ChatMessage } from './interfaces/ai-strategy';
-import { MessageRole } from '@naty-ai/shared-types';
+import { MessageRole, BlockType } from '@prisma/client';
+import { HandleForkDto } from './dto/fork.dto';
 
 @Injectable()
 export class ChatService {
@@ -13,81 +14,66 @@ export class ChatService {
     private providerFactory: ProviderFactory,
   ) {}
 
+  /**
+   * Génère une réponse IA et décompose le contenu en blocs pour un ancrage précis.
+   */
   async getAiResponse(
     userId: string,
     modelId: string,
     content: string,
     conversationId?: string,
   ) {
-    // 1. Trouver le modèle
-    const model = await this.prisma.aiModel.findUnique({
-      where: { id: modelId },
-    });
-    if (!model) throw new BadRequestException('Modèle introuvable');
+    const { model, apiKey } = await this.validateAccess(userId, modelId);
 
-    // 2. Récupérer et déchiffrer la clé
-    const keyRecord = await this.prisma.userApiKey.findUnique({
-      where: { userId_provider: { userId, provider: model.provider } },
-    });
-    if (!keyRecord)
-      throw new BadRequestException(`Clé manquante pour ${model.provider}`);
-
-    const apiKey = this.encryptionService.decrypt(keyRecord.encryptedKey);
-
-    // 3. Obtenir la conversation et l'historique
-    let conversation;
     let history: ChatMessage[] = [];
+    let currentConvId = conversationId;
     let isNewConversation = false;
 
     if (conversationId) {
-      conversation = await this.prisma.conversation.findUnique({
+      const conv = await this.prisma.conversation.findUnique({
         where: { id: conversationId, userId },
-        include: { messages: { orderBy: { createdAt: 'asc' }, take: 20 } },
+        include: {
+          messages: {
+            where: { parentMessageId: null }, // On ne prend que le tronc principal pour le contexte
+            orderBy: { createdAt: 'asc' },
+            take: 20,
+            include: { blocks: { orderBy: { order: 'asc' } } },
+          },
+        },
       });
-      if (!conversation)
-        throw new BadRequestException('Conversation introuvable');
+      if (!conv) throw new BadRequestException('Conversation introuvable');
 
-      history = conversation.messages.map((m) => ({
-        role: m.role as MessageRole,
-        content: m.content,
+      history = conv.messages.map((m) => ({
+        role: m.role,
+        content: m.blocks.map((b) => b.content).join('\n\n'),
       }));
     } else {
       isNewConversation = true;
-      conversation = await this.prisma.conversation.create({
+      const newConv = await this.prisma.conversation.create({
         data: { userId, title: 'Nouvelle discussion' },
       });
+      currentConvId = newConv.id;
     }
 
-    // 4. Ajouter le message actuel à l'historique avant l'envoi
-    const currentMessage: ChatMessage = { role: MessageRole.USER, content };
-    const fullContext = [...history, currentMessage];
+    const aiResponse = await this.callAiStrategy(model, apiKey, [
+      ...history,
+      { role: MessageRole.USER, content },
+    ]);
 
-    // 5. Appeler l'IA avec TOUT le contexte
-    const strategy = this.providerFactory.getProvider(model.provider);
-    const aiResponse = await strategy.generateResponse(
-      fullContext,
-      model.id,
-      apiKey,
-    );
-
-    // 6. Sauvegarder les deux nouveaux messages (User et AI) en BDD
-    await this.prisma.message.createMany({
-      data: [
-        { content, role: MessageRole.USER, conversationId: conversation.id },
-        {
-          content: aiResponse,
-          role: MessageRole.ASSISTANT,
-          conversationId: conversation.id,
-          modelId: model.id,
-        },
-      ],
+    const saved = await this.saveMessagePair({
+      userId,
+      conversationId: currentConvId!,
+      userContent: content,
+      aiContent: aiResponse,
+      modelId: model.id,
+      parentMessageId: undefined,
     });
 
-    let finalTitle = conversation.title; // Par défaut "Nouvelle discussion"
-
+    // Génération du titre si c'est le premier message
+    let finalTitle = 'Nouvelle discussion';
     if (isNewConversation) {
       finalTitle = await this.generateConversationTitle(
-        conversation.id,
+        currentConvId!,
         content,
         model.id,
         apiKey,
@@ -95,12 +81,213 @@ export class ChatService {
       );
     }
 
-    // 8. On renvoie le titre au front pour qu'il puisse mettre à jour la Sidebar immédiatement
     return {
+      ...saved,
       response: aiResponse,
-      conversationId: conversation.id,
+      conversationId: currentConvId,
       title: finalTitle,
     };
+  }
+
+  /**
+   * FLUX FORK : Réponse contextuelle liée à une annotation sur un bloc
+   */
+  async handleFork(userId: string, dto: HandleForkDto) {
+    const { model, apiKey } = await this.validateAccess(userId, dto.modelId);
+
+    // 1. On récupère le bloc d'origine (Ancre)
+    const block = await this.prisma.messageBlock.findUnique({
+      where: { id: dto.blockId },
+      include: { message: true },
+    });
+    if (!block) throw new BadRequestException('Bloc introuvable');
+
+    let chatHistory: ChatMessage[] = [];
+
+    // 2. GESTION DU CONTEXTE IA
+    if (dto.annotationId) {
+      const previousMessages = await this.getForkMessages(
+        userId,
+        dto.annotationId,
+      );
+      chatHistory = previousMessages.map((m) => ({
+        role: m.role,
+        content: m.blocks.map((b) => b.content).join('\n\n'),
+      }));
+    } else {
+      chatHistory = [
+        {
+          role: MessageRole.USER,
+          content:
+            `[CONTEXTE DU PARAGRAPHE]\n"${block.content}"\n\n[PASSAGE SÉLECTIONNÉ]\n"${dto.selectedText}"\n\n[QUESTION]\n${dto.content}`.trim(),
+        },
+      ];
+    }
+
+    // 3. APPEL IA
+    const aiResponse = await this.callAiStrategy(model, apiKey, chatHistory);
+
+    // 4. SAUVEGARDE (Unique moteur partagé)
+    return this.saveMessagePair({
+      userId,
+      conversationId: block.message.conversationId,
+      userContent: dto.content,
+      aiContent: aiResponse,
+      modelId: model.id,
+      parentMessageId: block.messageId, // On lie toujours au message parent
+      annotationId: dto.annotationId, // Si présent, réutilise l'ancre existante
+      // On ne passe forkData QUE si on n'a pas encore d'annotationId (donc création)
+      forkData: dto.annotationId
+        ? undefined
+        : {
+            blockId: block.id,
+            selectedText: dto.selectedText!,
+            startIndex: dto.startIndex || 0,
+            endIndex: dto.endIndex || 0,
+          },
+    });
+  }
+
+  // --- LOGIQUE INTERNE PARTAGÉE ---
+
+  private async validateAccess(userId: string, modelId: string) {
+    const model = await this.prisma.aiModel.findUnique({
+      where: { id: modelId },
+    });
+    if (!model) throw new BadRequestException('Modèle introuvable');
+
+    const key = await this.prisma.userApiKey.findUnique({
+      where: { userId_provider: { userId, provider: model.provider } },
+    });
+    if (!key)
+      throw new BadRequestException(`Clé manquante pour ${model.provider}`);
+
+    return { model, apiKey: this.encryptionService.decrypt(key.encryptedKey) };
+  }
+
+  private async callAiStrategy(
+    model: any,
+    apiKey: string,
+    messages: ChatMessage[],
+  ) {
+    const strategy = this.providerFactory.getProvider(model.provider);
+    return strategy.generateResponse(messages, model.id, apiKey);
+  }
+
+  private async saveMessagePair(params: {
+    userId: string;
+    conversationId: string;
+    userContent: string;
+    aiContent: string;
+    modelId: string;
+    parentMessageId?: string;
+    annotationId?: string; // Pour répondre dans un fork existant
+    forkData?: {
+      // Pour créer un nouveau fork
+      blockId: string;
+      selectedText: string;
+      startIndex: number;
+      endIndex: number;
+    };
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      let finalAnnotationId = params.annotationId;
+
+      // 1. GESTION DE L'ANCRE (ANNOTATION)
+      // On ne crée l'annotation que si on a forkData ET qu'on n'a pas déjà un annotationId
+      if (params.forkData && !finalAnnotationId) {
+        const ann = await tx.messageAnnotation.create({
+          data: {
+            userId: params.userId,
+            blockId: params.forkData.blockId,
+            selectedText: params.forkData.selectedText,
+            startIndex: params.forkData.startIndex,
+            endIndex: params.forkData.endIndex,
+          },
+        });
+        finalAnnotationId = ann.id;
+      }
+
+      // 2. CRÉATION DU MESSAGE UTILISATEUR
+      const userMsg = await tx.message.create({
+        data: {
+          role: MessageRole.USER,
+          conversationId: params.conversationId,
+          parentMessageId: params.parentMessageId || null,
+          annotationId: finalAnnotationId || null,
+          blocks: {
+            create: {
+              content: params.userContent,
+              type: BlockType.TEXT,
+              order: 0,
+            },
+          },
+        },
+      });
+
+      // 3. PRÉPARATION ET CRÉATION DU MESSAGE ASSISTANT
+      const paragraphs = params.aiContent
+        .split(/\n\n+/)
+        .filter((p) => p.trim() !== '');
+
+      const assistantMsg = await tx.message.create({
+        data: {
+          role: MessageRole.ASSISTANT,
+          conversationId: params.conversationId,
+          parentMessageId: params.parentMessageId || null,
+          annotationId: finalAnnotationId || null,
+          modelId: params.modelId,
+          blocks: {
+            create: paragraphs.map((para, index) => {
+              const text = para.trim();
+              let type: BlockType = BlockType.TEXT;
+
+              // Vérification du type de bloc
+              if (text.startsWith('```')) {
+                type = BlockType.CODE;
+              }
+
+              return { content: text, type, order: index };
+            }),
+          },
+        },
+        include: { blocks: { orderBy: { order: 'asc' } } },
+      });
+
+      return {
+        userMessageId: userMsg.id,
+        assistantMessageId: assistantMsg.id,
+        blocks: assistantMsg.blocks,
+        annotationId: finalAnnotationId,
+      };
+    });
+  }
+
+  /**
+   * Récupère une conversation complète avec ses messages et leurs blocs respectifs.
+   */
+  async getConversationWithMessages(userId: string, conversationId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId, userId },
+      include: {
+        messages: {
+          where: { parentMessageId: null },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            blocks: {
+              orderBy: { order: 'asc' },
+              include: {
+                annotations: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!conversation)
+      throw new BadRequestException('Conversation introuvable');
+    return conversation;
   }
 
   async getUserConversations(userId: string) {
@@ -109,21 +296,6 @@ export class ChatService {
       orderBy: { updatedAt: 'desc' },
       select: { id: true, title: true, updatedAt: true },
     });
-  }
-
-  async getConversationWithMessages(userId: string, conversationId: string) {
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id: conversationId, userId },
-      include: {
-        messages: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-    });
-
-    if (!conversation)
-      throw new BadRequestException('Conversation introuvable');
-    return conversation;
   }
 
   async generateConversationTitle(
@@ -150,18 +322,28 @@ export class ChatService {
 
       return cleanTitle;
     } catch (error) {
-      return 'Nouvelle discussion'; // Fallback
+      return 'Nouvelle discussion';
     }
   }
 
   async getModels() {
     return this.prisma.aiModel.findMany({
+      where: { isEnabled: true, isPublic: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getForkMessages(userId: string, annotationId: string) {
+    return this.prisma.message.findMany({
       where: {
-        isEnabled: true,
-        isPublic: true,
+        annotationId: annotationId,
+        conversation: {
+          userId: userId,
+        },
       },
-      orderBy: {
-        name: 'asc',
+      orderBy: { createdAt: 'asc' },
+      include: {
+        blocks: { orderBy: { order: 'asc' } },
       },
     });
   }

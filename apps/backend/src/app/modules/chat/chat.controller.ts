@@ -12,6 +12,7 @@ import {
 import { ChatService } from './chat.service';
 import { AskDto } from './dto/ask.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { HandleForkDto } from './dto/fork.dto';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
@@ -26,6 +27,19 @@ export class ChatController {
       dto.content,
       dto.conversationId,
     );
+  }
+
+  @Post('fork')
+  async handleFork(@Req() req: any, @Body() dto: HandleForkDto) {
+    return this.chatService.handleFork(req.user.id, dto);
+  }
+
+  @Get('fork/:annotationId')
+  async getForkMessages(
+    @Req() req: any,
+    @Param('annotationId') annotationId: string,
+  ) {
+    return this.chatService.getForkMessages(req.user.id, annotationId);
   }
 
   @Get('conversations')
