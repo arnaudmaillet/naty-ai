@@ -1,47 +1,62 @@
-import { useState, useEffect, useCallback, RefObject } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
+import { useChatStore } from '../store/useChatStore';
 
-export const useTextSelection = (
-  containerRef: React.RefObject<HTMLElement | null>,
-) => {
-  const [selection, setSelection] = useState<{
-    text: string;
-    rect: DOMRect | null;
-    mousePos: { x: number; y: number } | null;
-  } | null>(null);
+export const useTextSelection = () => {
+  const setSelection = useChatStore((state) => state.setSelection);
+  const isMouseDown = useRef(false);
 
-  const handleSelection = useCallback(
-    (e: MouseEvent) => {
-      // On récupère l'événement
-      const sel = window.getSelection();
+  const updateSelection = useCallback(() => {
+    const sel = window.getSelection();
+    const blockId = useChatStore.getState().activeBlockId;
 
-      if (!sel || sel.rangeCount === 0 || sel.toString().trim().length === 0) {
-        setSelection(null);
-        return;
-      }
+    // Si pas de sélection ou sélection vide -> on ferme
+    if (
+      !sel ||
+      sel.isCollapsed ||
+      sel.toString().trim().length === 0 ||
+      !blockId
+    ) {
+      setSelection(null);
+      return;
+    }
 
-      const range = sel.getRangeAt(0);
-      const container = containerRef.current;
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
 
-      if (container && container.contains(range.commonAncestorContainer)) {
-        setSelection({
-          text: sel.toString(),
-          rect: range.getBoundingClientRect(),
-          mousePos: { x: e.clientX, y: e.clientY }, // <-- Coordonnées au moment du mouseup
-        });
-      } else {
-        setSelection(null);
-      }
-    },
-    [containerRef],
-  );
+    setSelection({
+      text: sel.toString(),
+      rect: rect,
+      blockId: blockId,
+    });
+  }, [setSelection]);
 
   useEffect(() => {
-    // On passe l'événement au handler
-    const onMouseUp = (e: MouseEvent) => handleSelection(e);
+    const handleMouseDown = (e: MouseEvent) => {
+      isMouseDown.current = true;
 
-    document.addEventListener('mouseup', onMouseUp);
-    return () => document.removeEventListener('mouseup', onMouseUp);
-  }, [handleSelection]);
+      const target = e.target as HTMLElement;
+      // SI on clique hors de la bulle, on ferme TOUT DE SUITE
+      // sans attendre le mouseup. C'est ça qui évite le double clic.
+      if (!target.closest('.precision-bubble')) {
+        setSelection(null);
+      }
+    };
 
-  return selection;
+    const handleMouseUp = () => {
+      isMouseDown.current = false;
+      // On utilise requestAnimationFrame plutôt que setTimeout
+      // pour être synchrone avec le prochain rendu navigateur
+      requestAnimationFrame(() => {
+        updateSelection();
+      });
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [updateSelection, setSelection]);
 };
