@@ -1,49 +1,53 @@
-import { useEffect, useState, useCallback } from "react";
-import { useChatStore } from "apps/frontend/src/store/useChatStore";
+'use client';
+
+import React, { useEffect, useState, useCallback, memo } from "react";
+import { useMainStore } from "apps/frontend/src/store/useMainStore";
+import { motion, AnimatePresence } from "framer-motion";
+import { Sparkles } from "lucide-react";
+import { cn } from "../../../lib/utils";
 
 export interface AskBubbleProps {
     containerRef: React.RefObject<HTMLDivElement | null>;
     onForkRequest: (text: string, blockId: string) => void;
 }
 
-export const AskBubble = ({ containerRef, onForkRequest }: AskBubbleProps) => {
-    const selection = useChatStore((state) => state.selection);
-    const setSelection = useChatStore((state) => state.setSelection);
+export const AskBubble = memo(({ containerRef, onForkRequest }: AskBubbleProps) => {
+    const hasSelection = useMainStore((state) => !!state.selection?.blockId);
+    const setSelection = useMainStore((state) => state.setSelection);
+
     const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
 
-    // Fonction de calcul de position ultra-précise
     const updatePosition = useCallback(() => {
-        if (!selection?.rect || !containerRef.current) return;
+        const domSelection = window.getSelection();
+        if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed || !containerRef.current) {
+            setCoords(null);
+            return;
+        }
 
         const scroller = containerRef.current;
         const scrollerRect = scroller.getBoundingClientRect();
-
-        // On récupère la position actuelle du texte sélectionné 
-        // (getSelection permet d'avoir la position réelle même après scroll)
-        const domSelection = window.getSelection();
-        if (!domSelection || domSelection.rangeCount === 0) return;
-
         const range = domSelection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
 
-        // Si le texte sort du scroller, on cache la bulle
         if (rect.top < scrollerRect.top || rect.bottom > scrollerRect.bottom) {
             setCoords(null);
             return;
         }
 
         setCoords({
-            top: rect.top - scrollerRect.top + scroller.scrollTop,
+            top: rect.top - scrollerRect.top + scroller.scrollTop - 42,
             left: rect.left - scrollerRect.left
         });
-    }, [selection, containerRef]);
+    }, [containerRef]);
 
-    // Écouter le scroll du container
     useEffect(() => {
         const scroller = containerRef.current;
-        if (!scroller || !selection) return;
+        if (!scroller || !hasSelection) {
+            if (coords) setCoords(null);
+            return;
+        }
 
-        updatePosition(); // Position initiale
+        updatePosition();
 
         scroller.addEventListener('scroll', updatePosition, { passive: true });
         window.addEventListener('resize', updatePosition);
@@ -52,40 +56,52 @@ export const AskBubble = ({ containerRef, onForkRequest }: AskBubbleProps) => {
             scroller.removeEventListener('scroll', updatePosition);
             window.removeEventListener('resize', updatePosition);
         };
-    }, [selection, containerRef, updatePosition]);
-
-    if (!selection || !coords || !selection.blockId) return null;
+    }, [hasSelection, containerRef, updatePosition]);
 
     const handleAction = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        onForkRequest(selection.text, selection.blockId!);
-        setSelection(null);
-        window.getSelection()?.removeAllRanges();
+
+        const state = useMainStore.getState();
+        if (state.selection?.text && state.selection?.blockId) {
+            onForkRequest(state.selection.text, state.selection.blockId);
+            setSelection(null);
+            window.getSelection()?.removeAllRanges();
+        }
     };
 
+    if (!hasSelection) return null;
+
     return (
-        <div
-            className="absolute z-[100] pointer-events-auto"
-            style={{
-                top: `${coords.top}px`,
-                left: `${coords.left}px`,
-                transform: 'translate(0%, calc(-100% - 12px))',
-                transition: 'none',
-                willChange: 'transform'
-            }}
-        >
-            <div className="flex items-center bg-gray-900 text-white rounded-xl shadow-2xl border border-white/20 p-1 backdrop-blur-md ring-1 ring-black/5">
-                <button
-                    onMouseDown={handleAction}
-                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-blue-600 text-white rounded-lg transition-colors active:scale-95"
+        <AnimatePresence>
+            {coords && (
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 5 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                    className="absolute z-[100] pointer-events-auto"
+                    style={{
+                        top: coords.top,
+                        left: coords.left,
+                        willChange: 'transform, opacity'
+                    }}
                 >
-                    <svg className="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span className="text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">Précision</span>
-                </button>
-            </div>
-        </div>
+                    <button
+                        onMouseDown={handleAction}
+                        className={cn(
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-zinc-100",
+                            "bg-zinc-50 hover:bg-zinc-200 text-gray-800 transition-all active:scale-95 shadow-lg"
+                        )}
+                    >
+                        <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                        <span className="text-[11px] font-bold uppercase whitespace-nowrap">
+                            Ask about this
+                        </span>
+                    </button>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
-};
+});
+
+AskBubble.displayName = 'AskBubble';
