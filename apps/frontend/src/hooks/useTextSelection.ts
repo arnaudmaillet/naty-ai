@@ -1,13 +1,13 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useChatStore } from '../store/useChatStore';
+import { useMainStore } from '../store/useMainStore';
 
 export const useTextSelection = () => {
-  const setSelection = useChatStore((state) => state.setSelection);
+  const setSelection = useMainStore((state) => state.setSelection);
   const isMouseDown = useRef(false);
 
   const updateSelection = useCallback(() => {
     const sel = window.getSelection();
-    const blockId = useChatStore.getState().activeBlockId;
+    const blockId = useMainStore.getState().activeBlockId;
 
     // Si pas de sélection ou sélection vide -> on ferme
     if (

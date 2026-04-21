@@ -1,7 +1,7 @@
 // apps/frontend/src/app/layout.tsx
 
 import './global.css';
-import { Sidebar } from '../features/chat/components/Sidebar';
+import { Sidebar } from '../features/sidebar/Sidebar';
 import { Suspense } from 'react';
 import { Providers } from './providers'; // Import du provider
 
