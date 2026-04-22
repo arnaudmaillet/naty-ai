@@ -1,4 +1,4 @@
-// apps/backend/src/app/modules/chat/chat.controller.ts
+// apps/backend/src/app/modules/chat/presentation/chat.controller.ts
 
 import {
   Controller,
@@ -10,55 +10,65 @@ import {
   Req,
   Param,
   Query,
+  Inject,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { ChatService } from './chat.service';
+import { Readable } from 'node:stream';
+
 import { AskDto } from './dto/ask.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Readable } from 'node:stream';
+import { GetAiStreamUseCase } from './application/usecases/ask-ai.use-case';
+import { IChatRepository } from './domain/repositories/chat.repository.interface';
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    // Injection du cas d'utilisation complexe (Écriture / Action)
+    private readonly getAiStreamUseCase: GetAiStreamUseCase,
+
+    // Injection de l'interface de lecture (Queries)
+    @Inject('IChatRepository') private readonly chatRepository: IChatRepository,
+  ) {}
 
   @Post('ask')
   async ask(@Req() req: any, @Body() dto: AskDto, @Res() res: Response) {
     try {
-      // MODIFICATION ICI : On passe 'dto' directement au lieu de décomposer les arguments
-      // Cela permet au service d'accéder à dto.isFork, dto.blockId, dto.annotationId, etc.
-      const streamResponse = await this.chatService.getAiStreamResponse(
+      // 1. On délègue au Use Case
+      const streamResponse = await this.getAiStreamUseCase.execute(
         req.user.id,
-        dto, // On envoie l'objet DTO complet
+        dto,
       );
 
       if (!streamResponse.body) {
         throw new Error('Le flux de réponse est vide');
       }
 
-      // Configuration des headers pour le streaming
+      // 2. Configuration des headers Express
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      // Conversion du Web Stream en Node.js Readable Stream
-      const nodeStream = Readable.fromWeb(streamResponse.body as any);
+      // (Optionnel) Transfert des headers custom générés par le Use Case (ex: x-annotation-id)
+      streamResponse.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
 
-      // On pipe vers la réponse Express
+      // 3. Conversion et pipe
+      const nodeStream = Readable.fromWeb(streamResponse.body as any);
       nodeStream.pipe(res);
     } catch (error: unknown) {
-      // On explicite le type unknown
       console.error('Streaming error:', error);
-
-      // On extrait le message de l'erreur de manière sécurisée
       const errorMessage =
         error instanceof Error ? error.message : 'Erreur inconnue';
 
       if (!res.headersSent) {
-        res.status(500).json({
-          message: errorMessage || 'Erreur lors de la génération du stream',
-        });
+        res
+          .status(500)
+          .json({
+            message: errorMessage || 'Erreur lors de la génération du stream',
+          });
       } else {
         res.end();
       }
@@ -70,26 +80,24 @@ export class ChatController {
     @Req() req: any,
     @Param('annotationId') annotationId: string,
   ) {
-    return this.chatService.getForkMessages(req.user.id, annotationId);
+    // Lecture directe via l'interface du Repository
+    return this.chatRepository.getForkMessages(req.user.id, annotationId);
   }
 
   @Get('conversations')
   async getConversations(@Req() req: any) {
-    return this.chatService.getUserConversations(req.user.id);
+    return this.chatRepository.getUserConversations(req.user.id);
   }
 
   @Get('conversations/:id')
   async getConversationMessages(
     @Req() req: any,
     @Param('id') id: string,
-    @Query('cursor') cursor?: string, // L'ID du message le plus ancien déjà chargé
-    @Query('limit') limit?: string, // Nombre de messages à charger
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
   ) {
-    // On convertit la limit en nombre, avec une valeur par défaut de 20
     const take = limit ? parseInt(limit, 10) : 20;
-
-    // On appelle la nouvelle méthode de service paginée
-    return this.chatService.getConversationMessagesPaginated(
+    return this.chatRepository.getConversationMessagesPaginated(
       req.user.id,
       id,
       cursor,
@@ -98,7 +106,9 @@ export class ChatController {
   }
 
   @Get('models')
-  async listModels() {
-    return this.chatService.getModels();
+  async listAvailableModels() {
+    // Note: Assure-toi d'ajouter getModels() dans IChatRepository
+    // et dans PrismaChatRepository !
+    return this.chatRepository.getAvailableModels();
   }
 }

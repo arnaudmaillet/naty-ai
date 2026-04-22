@@ -1,3 +1,5 @@
+// apps/backend/src/app/modules/chat/chat.service.ts
+
 import { generateText, streamText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
@@ -5,7 +7,6 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProviderFactory } from './providers/provider.factory';
 import { EncryptionService } from '../encryption/encryption.service';
-import { ChatMessage } from './interfaces/ai-strategy';
 import { MessageRole, BlockType } from '@prisma/client';
 import { AskDto } from './dto/ask.dto';
 
