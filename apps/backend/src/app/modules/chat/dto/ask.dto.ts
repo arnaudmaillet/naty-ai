@@ -16,7 +16,7 @@ export class AskDto {
 
   // --- Propriétés héritées du Fork (Optionnelles) ---
   @IsOptional()
-  @IsBoolean() // On ajoute ce flag pour savoir si on crée une annotation ou non
+  @IsBoolean()
   isFork?: boolean;
 
   @IsOptional()

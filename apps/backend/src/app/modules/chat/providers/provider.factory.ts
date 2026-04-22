@@ -13,7 +13,9 @@ export class ProviderFactory {
         return this.geminiStrategy;
       // case AiProvider.OPENAI: return this.openAiStrategy; (A ajouter plus tard)
       default:
-        throw new BadRequestException(`Le provider ${provider} n'est pas encore supporté.`);
+        throw new BadRequestException(
+          `Le provider ${provider} n'est pas encore supporté.`,
+        );
     }
   }
 }
